@@ -12,7 +12,8 @@ from tkinter import filedialog
 from tkinter import messagebox
 from PIL import Image, ImageTk
 from collections import deque
-
+from collections import deque
+from psutil._common import hilite
 
 global ROW, COL, image_mapping
 
@@ -186,6 +187,8 @@ def run_game(ROW, COL):
                     queue.append((node, new_path))
         return None
 
+
+
     def dfs_solve(puzzle):
         global total_nodes
         total_nodes = 0
@@ -215,6 +218,7 @@ def run_game(ROW, COL):
             if is_solved(list(current_node)):
                 return path
             if depth == depth_limit:
+
                 continue
             for item in possible_moves(current_node):
                 node, pos_move = item
@@ -428,33 +432,77 @@ def run_game(ROW, COL):
 
         return None
 
-    def hc_solve(puzzle):
+    def hash_hillclimbing(puzzle):
+        count = 0
+        for i in range(0, len(puzzle)):
+            if puzzle[i] == i:
+                count -= 1
+        return count
+
+    def hillclimbing_search(puzzle):
         global total_nodes
         total_nodes = 0
-
-        current_node = list(puzzle)
-        current_cost = comparator(current_node)
-        path = []
-
-        while True:
-            neighbors = possible_moves(current_node)
-            random.shuffle(neighbors)
-            found_better_neighbor = False
-
-            for neighbor, move in neighbors:
-                neighbor_cost = comparator(neighbor)
-                if neighbor_cost < current_cost:
-                    current_node = neighbor
-                    current_cost = neighbor_cost
-                    found_better_neighbor = True
+        start_node = tuple(puzzle)
+        queue = deque([(start_node, [])])
+        while queue:
+            current_node, path = queue.popleft()
+            node, pos_move = possible_moves(current_node)[0]
+            cost = hash_hillclimbing(node)
+            for i in range(1, len(possible_moves(current_node))):
+                if cost >= hash_hillclimbing(node):
+                    cost = hash_hillclimbing(node)
+                    node, pos_move = possible_moves(current_node)[i]
                     total_nodes += 1
-                    path.append(move)
-                    break
+                else:
+                    return None
+            new_path = path + [pos_move]
+            if is_solved(list(node)):
+                return new_path
+            queue.append((node, new_path))
+        return None
 
-            if not found_better_neighbor:
-                break
-
+    def hillclimbing_solve(puzzle):
+        path = hillclimbing_search(puzzle)
+        while path is None:
+            random_shuffle(puzzle)
+            path = hillclimbing_search(puzzle)
         return path
+
+    def beam_solve(puzzle):
+        global total_nodes
+        total_nodes = 0
+        visited = set()
+        start_node = tuple(puzzle)
+
+        queue1 = deque([(start_node, [])])
+
+        while queue1:
+            current_node, path = queue1.popleft()
+            k = random.randint(2, len(possible_moves(current_node)))
+            top_k_elements = []
+            priority_queue = queue.PriorityQueue()
+            # put priority.queue have a hash value for each item
+            for item in possible_moves(current_node):
+                node, pos_move = item
+                priority_queue.put((hash_hillclimbing(node), node, pos_move))
+                # new_path = path + [pos_move]
+                # queue1.append((node, new_path))
+
+            # choose k best possible moves
+            for _ in range(k):
+                if not priority_queue.empty():
+                    top_k_elements.append(priority_queue.get())
+
+            for item in top_k_elements:
+                _,node, pos_move = item
+                if tuple(node) not in visited:
+                    visited.add(tuple(node))
+                    total_nodes += 1
+                    new_path = path + [pos_move]
+                    if is_solved(list(node)):
+                        return new_path
+                    queue1.append((node, new_path))
+        return None
 
     def add_record():
         global record_row
@@ -470,7 +518,7 @@ def run_game(ROW, COL):
             str(total_nodes),
             str(depth_limit) if algorithm_combobox.get() in ["DLS", "IDDFS"] else "",
             str(heuristic_rb.get())
-            if algorithm_combobox.get() in ["A*", "IDA*", "Greedy", "Hill Climbing"]
+            if algorithm_combobox.get() in ["A*", "IDA*", "Greedy"]
             else "",
         ]
 
@@ -577,7 +625,6 @@ def run_game(ROW, COL):
             selected_value == "A*"
             or selected_value == "IDA*"
             or selected_value == "Greedy"
-            or selected_value == "Hill Climbing"
         ):
             hamming_rb.grid(row=3, column=3, padx=5, pady=5)
             manhattan_rb.grid(row=3, column=2, padx=5, pady=5)
@@ -601,7 +648,8 @@ def run_game(ROW, COL):
             "A*": A_solve,
             "IDA*": IDA_solve,
             "Bi-Search": bidirectional_solve,
-            "Hill Climbing": hc_solve,
+            "Hill Climbing": hillclimbing_solve,
+            "Beam Search": beam_solve,
         }
         selected_algorithm = algorithm_combobox.get()
         start_time = time.time()
@@ -619,16 +667,13 @@ def run_game(ROW, COL):
             total_steps = len(solution)
             update_total_steps_count(total_steps)
             skip_btn.config(state=tk.NORMAL)
-            step = 0
             for move_to in solution:
-                if speed == 0:
-                    step += 1
-                    if step > 50:
-                        puzzle = list(goal)
-                        step_count = total_steps
-                        update_display()
-                        update_step_count(step_count)
-                        break
+                if step_count > 100 and speed == 0:
+                    puzzle = list(goal)
+                    step_count = total_steps
+                    update_display()
+                    update_step_count(step_count)
+                    break
                 move(puzzle, move_to)
                 step_count += 1
                 update_step_count(step_count)
@@ -827,6 +872,7 @@ def run_game(ROW, COL):
             "IDA*",
             "Bi-Search",
             "Hill Climbing",
+            "Beam Search",
         ],
     )
     algorithm_combobox.configure(width=10, font=("Helvetica", 20))
